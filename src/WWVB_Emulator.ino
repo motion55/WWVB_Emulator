@@ -11,6 +11,8 @@
 #include <ESP8266WiFi.h>
 #include <WiFiUdp.h>
 
+#include "core_esp8266_waveform.h"
+
 //#include <Time.h>
 #include <TimeLib.h>
 
@@ -46,14 +48,17 @@ uint32_t last_update = 0;
 uint32_t update_interval = 1000;
 bool first_hour = 0;
 
-#define	WWVB_EnaPin 	0
-#define	WWVB_OutPin 	15
-#define	WWVB_OutInv 	2
-#define	WWVB_60KHZ	 	4
+#define	WWVB_EnaPin 	D3	//GPIO0
+#define	WWVB_OutPin 	D8	//GPIO15
+#define	WWVB_OutInv 	D4	//GPIO2
+#define	WWVB_60KHZ	 	D2	//GPIO4
 
-#define MARK_ 	{digitalWrite(WWVB_OutPin, LOW); digitalWrite(WWVB_OutInv, HIGH);}
-#define SPACE 	{digitalWrite(WWVB_OutPin, HIGH); digitalWrite(WWVB_OutInv, LOW);}
-
+#define MARK_ 	{stopWaveform(WWVB_60KHZ);	\
+	digitalWrite(WWVB_60KHZ, LOW);	\
+	digitalWrite(WWVB_OutPin, LOW); digitalWrite(WWVB_OutInv, HIGH);}
+#define SPACE 	{	\
+	startWaveformClockCycles(WWVB_60KHZ, 1000, 1000, F_CPU);	\
+	digitalWrite(WWVB_OutPin, HIGH); digitalWrite(WWVB_OutInv, LOW);}
 
 bool WWVB_Enable = 0;
 
@@ -68,6 +73,8 @@ void setup() {
 	digitalWrite(WWVB_OutPin, LOW);
 	pinMode(WWVB_OutInv, OUTPUT);
 	digitalWrite(WWVB_OutPin, HIGH);
+	pinMode(WWVB_60KHZ, OUTPUT);
+	digitalWrite(WWVB_60KHZ, LOW);
 
 	IPAddress local_IP(192, 168, 25, 1);
 	IPAddress gateway(192, 168, 25, 1);
@@ -128,7 +135,7 @@ void loop() {
 
 		UpdateTime();
 
-		if (digitalRead(WWVB_EnaPin)==LOW)
+//		if (digitalRead(WWVB_EnaPin)==LOW)
 		{
 			WWVB_Enable = 1;	
 		}
@@ -137,8 +144,8 @@ void loop() {
 	{
 		if (WWVB_Enable)
 		{
-			WWVB_Enable = 0;	
 			SPACE;
+			WWVB_Enable = 0;	
 		}
 	}
 
@@ -489,7 +496,7 @@ void UpdateTime(void)
 	Serial.println("");
 }
 
-const int timeZone = 8 * SECS_PER_HOUR;     // PHT
+const int timeZone = 13 * SECS_PER_HOUR;     // PHT + EST = 13
 #define MAX_PACKET_DELAY	1500
 uint32_t send_Timestamp;
 
