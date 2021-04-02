@@ -46,11 +46,28 @@ uint32_t last_update = 0;
 uint32_t update_interval = 1000;
 bool first_hour = 0;
 
+#define	WWVB_EnaPin 	0
+#define	WWVB_OutPin 	15
+#define	WWVB_OutInv 	2
+#define	WWVB_60KHZ	 	4
+
+#define MARK_ 	{digitalWrite(WWVB_OutPin, LOW); digitalWrite(WWVB_OutInv, HIGH);}
+#define SPACE 	{digitalWrite(WWVB_OutPin, HIGH); digitalWrite(WWVB_OutInv, LOW);}
+
+
+bool WWVB_Enable = 0;
+
 /*///////////////////////////////////////////////////////////////////////////*/
 
 void setup() {
 	// put your setup code here, to run once:
 	Serial.begin(115200);
+
+	pinMode(WWVB_EnaPin, INPUT);
+	pinMode(WWVB_OutPin, OUTPUT);
+	digitalWrite(WWVB_OutPin, LOW);
+	pinMode(WWVB_OutInv, OUTPUT);
+	digitalWrite(WWVB_OutPin, HIGH);
 
 	IPAddress local_IP(192, 168, 25, 1);
 	IPAddress gateway(192, 168, 25, 1);
@@ -99,6 +116,8 @@ void setup() {
 	update_interval = 1000;
 }
 
+uint32_t pulse_off_delay = 1000;
+
 void loop() {
 	// put your main code here, to run repeatedly:
 	uint32_t current_millis = millis();
@@ -108,6 +127,19 @@ void loop() {
 		update_interval = 1000;
 
 		UpdateTime();
+
+		if (digitalRead(WWVB_EnaPin)==LOW)
+		{
+			WWVB_Enable = 1;	
+		}
+	}
+	else if  ((current_millis - last_update) >= pulse_off_delay) 
+	{
+		if (WWVB_Enable)
+		{
+			WWVB_Enable = 0;	
+			SPACE;
+		}
 	}
 
 	webserver_loop();
@@ -126,9 +158,298 @@ String GetDateStr(void)
 	return DateStr;
 }
 
+static  const uint8_t monthDays[]={31,28,31,30,31,30,31,31,30,31,30,31}; // API starts months from 1, this array starts from 0
+#define LEAP_YEAR(Y)     ( !(Y%4) && ((Y%100) || !(Y%400)) )
+
+uint16_t GetDayoftheYear(time_t tm)
+{
+	int buwan = month(tm)-1;
+	uint16_t DayoftheYear = 0;
+	
+	for (int i = 0; i<buwan; i++)
+	{
+		DayoftheYear += monthDays[i];
+	}
+
+	if (buwan>1) 
+	{
+		int taon = year(tm);
+		if (LEAP_YEAR(taon))
+		{
+			DayoftheYear += 1;
+		}
+	}
+
+	int Day = day(tm);
+	DayoftheYear += Day;
+
+	return DayoftheYear;
+}
+
+#define	PULSE_ZERO		{pulse_off_delay = 200; Serial.print(" 0 ");}
+#define	PULSE_ONE		{pulse_off_delay = 500; Serial.print(" 1 ");}
+#define	PULSE_MARKER	{pulse_off_delay = 800; Serial.print(" M ");}
+
+void WWVB_Begin(time_t tm)
+{
+	MARK_;
+
+	int sec = second(tm);
+	int min = minute(tm);
+	int min10 = min / 10;
+	min = min % 10;
+	int hr = hour(tm);
+	int hr10 = hr/10;
+	hr = hr % 10;
+	int DoY = GetDayoftheYear(tm);
+	int DoY10 = DoY/10;
+	int DoY100 = DoY/100;
+	DoY = DoY % 10;
+	int taon = year(tm);
+	bool LeapYear = LEAP_YEAR(taon);
+	int taon10 = taon/10;
+	taon10 = taon10 % 10;
+	taon = taon % 10;
+
+	DoY = DoY % 10;
+
+	switch (sec)
+	{
+		default:
+		case 4:
+		case 10:
+		case 11:
+		case 14:
+		case 20:
+		case 21:
+		case 24:
+		case 34:
+		case 35:
+		case 44:
+		case 54:
+			PULSE_ZERO;
+			break;
+		case 0:
+			WWVB_Enable = 0;
+		case 9:
+		case 19:
+		case 29:
+		case 39:
+		case 49:
+		case 59:
+			PULSE_MARKER;
+			break;
+		case 1:
+			if (min10&0x4)
+				PULSE_ONE
+			else
+				PULSE_ZERO;
+			break;
+		case 2:
+			if (min10&0x2)
+				PULSE_ONE
+			else
+				PULSE_ZERO;
+			break;
+		case 3:
+			if (min10&0x1)
+				PULSE_ONE
+			else
+				PULSE_ZERO;
+			break;
+		case 5:
+			if (min&0x8)
+				PULSE_ONE
+			else
+				PULSE_ZERO;
+			break;
+		case 6:
+			if (min&0x4)
+				PULSE_ONE
+			else
+				PULSE_ZERO;
+			break;
+		case 7:
+			if (min&0x2)
+				PULSE_ONE
+			else
+				PULSE_ZERO;
+			break;
+		case 8:
+			if (min&0x1)
+				PULSE_ONE
+			else
+				PULSE_ZERO;
+			break;
+		case 12:
+			if (hr10&0x2)
+				PULSE_ONE
+			else
+				PULSE_ZERO;
+			break;
+		case 13:
+			if (hr10&0x1)
+				PULSE_ONE
+			else
+				PULSE_ZERO;
+			break;
+		case 15:
+			if (hr&0x8)
+				PULSE_ONE
+			else
+				PULSE_ZERO;
+			break;
+		case 16:
+			if (hr&0x4)
+				PULSE_ONE
+			else
+				PULSE_ZERO;
+			break;
+		case 17:
+			if (hr&0x2)
+				PULSE_ONE
+			else
+				PULSE_ZERO;
+			break;
+		case 18:
+			if (hr&0x1)
+				PULSE_ONE
+			else
+				PULSE_ZERO;
+			break;
+		case 22:
+			if (DoY100&0x2)
+				PULSE_ONE
+			else
+				PULSE_ZERO;
+			break;
+		case 23:
+			if (DoY100&0x1)
+				PULSE_ONE
+			else
+				PULSE_ZERO;
+			break;
+		case 25:
+			if (DoY10&0x8)
+				PULSE_ONE
+			else
+				PULSE_ZERO;
+			break;
+		case 26:
+			if (DoY10&0x4)
+				PULSE_ONE
+			else
+				PULSE_ZERO;
+			break;
+		case 27:
+			if (DoY10&0x2)
+				PULSE_ONE
+			else
+				PULSE_ZERO;
+			break;
+		case 28:
+			if (DoY10&0x1)
+				PULSE_ONE
+			else
+				PULSE_ZERO;
+			break;
+		case 30:
+			if (DoY&0x8)
+				PULSE_ONE
+			else
+				PULSE_ZERO;
+			break;
+		case 31:
+			if (DoY&0x4)
+				PULSE_ONE
+			else
+				PULSE_ZERO;
+			break;
+		case 32:
+			if (DoY&0x2)
+				PULSE_ONE
+			else
+				PULSE_ZERO;
+			break;
+		case 33:
+			if (DoY&0x1)
+				PULSE_ONE
+			else
+				PULSE_ZERO;
+			break;
+		case 36:
+		case 38:
+		case 40:
+		case 41:
+			PULSE_ZERO;
+			break;
+		case 37:
+		case 42:
+		case 43:
+			PULSE_ONE;
+			break;
+		case 45:
+			if (taon10&0x8)
+				PULSE_ONE
+			else
+				PULSE_ZERO;
+			break;
+		case 46:
+			if (taon10&0x4)
+				PULSE_ONE
+			else
+				PULSE_ZERO;
+			break;
+		case 47:
+			if (taon10&0x2)
+				PULSE_ONE
+			else
+				PULSE_ZERO;
+			break;
+		case 48:
+			if (taon10&0x1)
+				PULSE_ONE
+			else
+				PULSE_ZERO;
+			break;
+		case 50:
+			if (taon&0x8)
+				PULSE_ONE
+			else
+				PULSE_ZERO;
+			break;
+		case 51:
+			if (taon&0x4)
+				PULSE_ONE
+			else
+				PULSE_ZERO;
+			break;
+		case 52:
+			if (taon&0x2)
+				PULSE_ONE
+			else
+				PULSE_ZERO;
+			break;
+		case 53:
+			if (taon&0x1)
+				PULSE_ONE
+			else
+				PULSE_ZERO;
+			break;
+		case 55:
+			if (LeapYear)
+				PULSE_ONE
+			else
+				PULSE_ZERO;
+			break;
+	}
+}
+
 void UpdateTime(void)
 {
 	time_t tm = now();
+
+	WWVB_Begin(tm);
 
 	int hour = hourFormat12(tm);
 	if (hour < 10)
@@ -179,8 +500,9 @@ time_t getNtpTime()
 	{
 		timeServerIP = addr;
 	}
-
+#ifdef _DEBUG_NTP_
 	Serial.println(F("Transmit NTP Request"));
+#endif	
 	sendNTPpacket(timeServerIP); // send an NTP packet to a time server
 	setSyncInterval(300);	//retry after 5 minutes
 
@@ -208,7 +530,9 @@ void CheckNtpPacket(uint32_t endWait)
 	{
 		if (size >= NTP_PACKET_SIZE)
 		{
+#ifdef _DEBUG_NTP_
 			Serial.println(F("Receive NTP Response"));
+#endif			
 			udp.read(packetBuffer, NTP_PACKET_SIZE);  // read packet into the buffer
 			unsigned long secsSince1900;
 
@@ -219,9 +543,10 @@ void CheckNtpPacket(uint32_t endWait)
 			secsSince1900 |= (unsigned long)packetBuffer[43];
 
 			uint32_t pingTime = (endWait - send_Timestamp)/2;
+#ifdef _DEBUG_NTP_
 			Serial.print("receive time = ");
 			Serial.println(pingTime);
-
+#endif
 			uint32_t frac_sec = (unsigned long)packetBuffer[44] << 8;
 			frac_sec += (unsigned long)packetBuffer[45];
 			frac_sec *= 1000;
@@ -235,9 +560,10 @@ void CheckNtpPacket(uint32_t endWait)
 			int32_t delta = -update_interval;
 
 			update_interval = endWait - last_update;
+#ifdef _DEBUG_NTP_
 			Serial.print("endWait - last_update = ");
 			Serial.println(update_interval);
-
+#endif
 			update_interval += frac_sec;
 			delta += update_interval;
 
@@ -248,18 +574,23 @@ void CheckNtpPacket(uint32_t endWait)
 			}
 			else
 			{
+#ifdef _DEBUG_NTP_
 				setSyncInterval(30);	//Update after 30 for the 1st hourt.
+#else
+				setSyncInterval(300);	//Update after 300 for the 1st hourt.
+#endif				
 			}
 
 			time_t tm = secsSince1900 - 2208988800UL + timeZone;
 			setTime(tm);
-
+#ifdef _DEBUG_NTP_
 			Serial.print("frac_sec = ");
 			Serial.print(frac_sec);
 			Serial.print(" delta = ");
 			Serial.print(delta);
 			Serial.print(" new update_interval = ");
 			Serial.println(update_interval);
+#endif			
 		}
 	}
 }
@@ -269,8 +600,10 @@ void sendNTPpacket(IPAddress& address)
 {
 	if (WiFi.status() == WL_CONNECTED)
 	{
+#ifdef _DEBUG_NTP_
 		Serial.print(F("sending NTP packet to "));
 		Serial.println(address);
+#endif		
 		// set all bytes in the buffer to 0
 		memset(packetBuffer, 0, NTP_PACKET_SIZE);
 		// Initialize values needed to form NTP request
