@@ -47,31 +47,33 @@ void sendNTPpacket(IPAddress &address);
 void my_delay_ms(int msec);
 
 uint32_t last_update = 0;
-uint32_t update_interval = 1000;
+ uint32_t update_interval = 1000;
 bool first_hour = 0;
 
-#define WWVB_EnaPin D3 // GPIO0
-#define WWVB_OutPin D8 // GPIO15
-#define WWVB_OutInv D4 // GPIO2
-#define WWVB_60KHZ D2  // GPIO4
+#define WWVB_EnaPin D3  // GPIO0
+#define WWVB_OutPin D8  // GPIO15
+#define WWVB_OutInv D4  // GPIO2
+#define WWVB_60KHZ  D2  // GPIO4
 
 #define MARK_                                                                  \
   {                                                                            \
-    stopWaveform(WWVB_60KHZ);                                                  \
     digitalWrite(WWVB_60KHZ, LOW);                                             \
     digitalWrite(WWVB_OutPin, HIGH);                                           \
     digitalWrite(WWVB_OutInv, LOW);                                            \
   }
-#define SPACE                                                                  \
+  
+#define SPACE_                                                                 \
   {                                                                            \
-    startWaveformClockCycles(WWVB_60KHZ, 1333, 4000, F_CPU);                   \
     digitalWrite(WWVB_OutPin, LOW);                                            \
     digitalWrite(WWVB_OutInv, HIGH);                                           \
   }
 
-bool WWVB_Enable = 0;
+    //stopWaveform(WWVB_60KHZ); 
+    /*startWaveformClockCycles(WWVB_60KHZ, 1333, 4000, F_CPU);*/
 
-/*///////////////////////////////////////////////////////////////////////////*/
+bool WWVB_Enable = 0;                                                          
+                                                                               
+/*/ //////////////////////////////////////////////////////////////////////////*/
 
 void setup() {
   // put your setup code here, to run once:
@@ -129,51 +131,69 @@ void setup() {
   update_interval = 1000;
 }
 
+uint32_t last_update2 = 0;
 uint32_t pulse_off_delay = 1000;
+//uint8_t current_second = 0;
+int DoY = 0;
+int DoY10 = 0;
+int DoY100 = 0;
 
 void loop() {
   // put your main code here, to run repeatedly:
-  uint32_t current_millis = millis();
-  if ((current_millis - last_update) >= update_interval) {
-    last_update = current_millis;
-    update_interval = 1000;
-
-    if (digitalRead(WWVB_EnaPin) == LOW) {
-      WWVB_Enable = 1;
-      UpdateTime();
-    } else {
-      digitalWrite(WWVB_OutPin, LOW);
-      digitalWrite(WWVB_OutInv, LOW);
-    }
-
-  } else if ((current_millis - last_update) >= pulse_off_delay) {
-    if (WWVB_Enable) {
-      SPACE;
-      WWVB_Enable = 0;
-    } else {
-      digitalWrite(WWVB_OutPin, LOW);
-      digitalWrite(WWVB_OutInv, LOW);
-    }
-  }
-
   webserver_loop();
 
   my_delay_ms(50);
 }
 
-/*///////////////////////////////////////////////////////////////////////////*/
+void WWVB_Task(uint32_t current_millis) {
 
-String GetDateStr(void) {
-  tmElements_t tm;
-  breakTime(now(), tm);
-  String DateStr(monthShortStr(tm.Month));
-  DateStr += " " + String(tm.Day) + " " + dayShortStr(tm.Wday) + " ";
-  return DateStr;
+  if ((current_millis - last_update) >= update_interval) {
+    last_update = current_millis;
+    last_update2 = current_millis;
+    update_interval = 1000;
+
+    time_t tm = now();
+    int sec = second(tm);
+
+    if (digitalRead(WWVB_EnaPin) == LOW) {
+      WWVB_Enable = 1;
+    } else if (sec == 0) {
+      WWVB_Enable = 0;
+    }
+
+    if (WWVB_Enable) {
+      MARK_;
+      UpdateTime(tm);
+    } else {
+      digitalWrite(WWVB_OutPin, LOW);
+      digitalWrite(WWVB_OutInv, LOW);
+    }
+  } else if ((current_millis - last_update2) >= pulse_off_delay) {
+    last_update2 = current_millis;
+    pulse_off_delay = 1000;
+
+    if (WWVB_Enable) {
+      SPACE_;
+    } else {
+      digitalWrite(WWVB_OutPin, LOW);
+      digitalWrite(WWVB_OutInv, LOW);
+    }
+  }
 }
 
-static const uint8_t monthDays[] = {
-    31, 28, 31, 30, 31, 30, 31,
-    31, 30, 31, 30, 31}; // API starts months from 1, this array starts from 0
+  /*///////////////////////////////////////////////////////////////////////////*/
+
+  String GetDateStr(void) {
+    tmElements_t tm;
+    breakTime(now(), tm);
+    String DateStr(monthShortStr(tm.Month));
+    DateStr += " " + String(tm.Day) + " " + dayShortStr(tm.Wday) + " ";
+    return DateStr;
+  }
+
+  static const uint8_t monthDays[] = {
+      31, 28, 31, 30, 31, 30, 31,
+      31, 30, 31, 30, 31}; // API starts months from 1, this array starts from 0
 #define LEAP_YEAR(Y) (!(Y % 4) && ((Y % 100) || !(Y % 400)))
 
 uint16_t GetDayoftheYear(time_t tm) {
@@ -207,15 +227,13 @@ uint16_t GetDayoftheYear(time_t tm) {
     pulse_off_delay = 500;                                                     \
     Serial.print(" 1 ");                                                       \
   }
-#define PULSE_MARKER                                                           \
+#define PULSE_MARK                                                             \
   {                                                                            \
     pulse_off_delay = 800;                                                     \
     Serial.print(" M ");                                                       \
   }
 
 void WWVB_Begin(time_t tm) {
-  MARK_;
-
   int sec = second(tm);
   int min = minute(tm);
   int min10 = min / 10;
@@ -223,17 +241,19 @@ void WWVB_Begin(time_t tm) {
   int hr = hour(tm);
   int hr10 = hr / 10;
   hr = hr % 10;
-  int DoY = GetDayoftheYear(tm);
-  int DoY10 = DoY / 10;
-  int DoY100 = DoY / 100;
+  DoY = GetDayoftheYear(tm);
+  DoY10 = DoY / 10;
+  DoY100 = DoY / 100;
   DoY = DoY % 10;
+  DoY10 = DoY10 % 10;
+  DoY100 = DoY100 % 10;
   int taon = year(tm);
   bool LeapYear = LEAP_YEAR(taon);
   int taon10 = taon / 10;
   taon10 = taon10 % 10;
   taon = taon % 10;
 
-  DoY = DoY % 10;
+  //current_second = sec;
 
   switch (sec) {
   default:
@@ -258,7 +278,7 @@ void WWVB_Begin(time_t tm) {
   case 39:
   case 49:
   case 59:
-    PULSE_MARKER;
+    PULSE_MARK;
     break;
   case 1:
     if (min10 & 0x4)
@@ -407,7 +427,7 @@ void WWVB_Begin(time_t tm) {
   case 37:
   case 42:
   case 43:
-    PULSE_ZERO;
+    PULSE_ONE;
     break;
   case 45:
     if (taon10 & 0x8)
@@ -466,8 +486,7 @@ void WWVB_Begin(time_t tm) {
   }
 }
 
-void UpdateTime(void) {
-  time_t tm = now();
+void UpdateTime(time_t tm) {
 
   WWVB_Begin(tm);
 
@@ -500,7 +519,12 @@ void UpdateTime(void) {
 
   Serial.print(" The time is ");
   Serial.print(TimeText);
-  Serial.println("");
+  Serial.print(" ");
+  Serial.print(DoY100);
+  Serial.print(" ");
+  Serial.print(DoY10);
+  Serial.print(" ");
+  Serial.println(DoY);
 }
 
 const int timeZone = 16 * SECS_PER_HOUR; // PHT + PST = 16
@@ -525,7 +549,9 @@ void my_delay_ms(int msec) {
   uint32_t delay_val = msec;
   uint32_t endWait = millis();
   uint32_t beginWait = endWait;
+
   while ((endWait - beginWait) < delay_val) {
+    WWVB_Task(endWait);
     CheckNtpPacket(endWait);
     delay(1);
     endWait = millis();
@@ -534,8 +560,9 @@ void my_delay_ms(int msec) {
 
 void CheckNtpPacket(uint32_t endWait) {
   uint32_t max_packet_delay = MAX_PACKET_DELAY;
-  int size = udp.parsePacket();
+  
   if ((endWait - send_Timestamp) < max_packet_delay) {
+    int size = udp.parsePacket();
     if (size >= NTP_PACKET_SIZE) {
 #ifdef _DEBUG_NTP_
       Serial.println(F("Receive NTP Response"));
