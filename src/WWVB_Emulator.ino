@@ -55,22 +55,31 @@ bool first_hour = 0;
 #define WWVB_OutInv D4  // GPIO2
 #define WWVB_60KHZ  D2  // GPIO4
 
+#define USE_60KHZ 1
+
+#if USE_60KHZ
+#define STOP_60KHZ  {stopWaveform(WWVB_60KHZ);digitalWrite(WWVB_60KHZ, LOW);}
+#define START_60KHZ {startWaveformClockCycles(WWVB_60KHZ, 1333, 4000, F_CPU);}
+#else
+#define STOP_60KHZ  
+#define START_60KHZ
+#endif
+
 #define MARK_                                                                  \
   {                                                                            \
-    digitalWrite(WWVB_60KHZ, LOW);                                             \
+    STOP_60KHZ;                                                                \
     digitalWrite(WWVB_OutPin, HIGH);                                           \
     digitalWrite(WWVB_OutInv, LOW);                                            \
   }
-  
+
 #define SPACE_                                                                 \
   {                                                                            \
+    START_60KHZ;                                                               \
     digitalWrite(WWVB_OutPin, LOW);                                            \
     digitalWrite(WWVB_OutInv, HIGH);                                           \
   }
 
-    //stopWaveform(WWVB_60KHZ); 
-    /*startWaveformClockCycles(WWVB_60KHZ, 1333, 4000, F_CPU);*/
-
+    
 bool WWVB_Enable = 0;                                                          
                                                                                
 /*/ //////////////////////////////////////////////////////////////////////////*/
