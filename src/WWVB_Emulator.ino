@@ -55,31 +55,32 @@ bool first_hour = 0;
 #define WWVB_OutInv D4  // GPIO2
 #define WWVB_60KHZ  D2  // GPIO4
 
-#define USE_60KHZ 1
+#define _DEBUG_NTP_ 1
 
-#if USE_60KHZ
-#define STOP_60KHZ  {stopWaveform(WWVB_60KHZ);digitalWrite(WWVB_60KHZ, LOW);}
-#define START_60KHZ {startWaveformClockCycles(WWVB_60KHZ, 1333, 4000, F_CPU);}
+#define _USE_60KHZ_ 1
+
+#if _USE_60KHZ_
+ #define STOP_60KHZ  {stopWaveform(WWVB_60KHZ);digitalWrite(WWVB_60KHZ, LOW);}
+ #define START_60KHZ {startWaveformClockCycles(WWVB_60KHZ, 1333, 4000, F_CPU);}
 #else
-#define STOP_60KHZ  
-#define START_60KHZ
+ #define STOP_60KHZ  
+ #define START_60KHZ
 #endif
 
 #define MARK_                                                                  \
   {                                                                            \
     STOP_60KHZ;                                                                \
-    digitalWrite(WWVB_OutPin, HIGH);                                           \
     digitalWrite(WWVB_OutInv, LOW);                                            \
+    if (WWVB_Enable) digitalWrite(WWVB_OutPin, HIGH);                          \
   }
 
 #define SPACE_                                                                 \
   {                                                                            \
     START_60KHZ;                                                               \
-    digitalWrite(WWVB_OutPin, LOW);                                            \
     digitalWrite(WWVB_OutInv, HIGH);                                           \
+    digitalWrite(WWVB_OutPin, LOW);                                            \
   }
 
-    
 bool WWVB_Enable = 0;                                                          
                                                                                
 /*/ //////////////////////////////////////////////////////////////////////////*/
@@ -147,6 +148,7 @@ int DoY = 0;
 int DoY10 = 0;
 int DoY100 = 0;
 
+
 void loop() {
   // put your main code here, to run repeatedly:
   webserver_loop();
@@ -165,28 +167,22 @@ void WWVB_Task(uint32_t current_millis) {
     int sec = second(tm);
 
     if (digitalRead(WWVB_EnaPin) == LOW) {
-      WWVB_Enable = 1;
+      if (!WWVB_Enable) {
+        WWVB_Enable = 1;
+        getNtpTime();
+      }
     } else if (sec == 0) {
       WWVB_Enable = 0;
     }
 
-    if (WWVB_Enable) {
-      MARK_;
-      UpdateTime(tm);
-    } else {
-      digitalWrite(WWVB_OutPin, LOW);
-      digitalWrite(WWVB_OutInv, LOW);
-    }
+    MARK_;
+    UpdateTime(tm);
+
   } else if ((current_millis - last_update2) >= pulse_off_delay) {
     last_update2 = current_millis;
     pulse_off_delay = 1000;
 
-    if (WWVB_Enable) {
-      SPACE_;
-    } else {
-      digitalWrite(WWVB_OutPin, LOW);
-      digitalWrite(WWVB_OutInv, LOW);
-    }
+    SPACE_;
   }
 }
 
@@ -280,7 +276,6 @@ void WWVB_Begin(time_t tm) {
     PULSE_ZERO;
     break;
   case 0:
-    WWVB_Enable = 0;
   case 9:
   case 19:
   case 29:
@@ -545,7 +540,7 @@ time_t getNtpTime() {
   if (WiFi.hostByName(ntpServerName, addr)) {
     timeServerIP = addr;
   }
-#ifdef _DEBUG_NTP_
+#if _DEBUG_NTP_
   Serial.println(F("Transmit NTP Request"));
 #endif
   sendNTPpacket(timeServerIP); // send an NTP packet to a time server
@@ -573,7 +568,7 @@ void CheckNtpPacket(uint32_t endWait) {
   if ((endWait - send_Timestamp) < max_packet_delay) {
     int size = udp.parsePacket();
     if (size >= NTP_PACKET_SIZE) {
-#ifdef _DEBUG_NTP_
+#if _DEBUG_NTP_
       Serial.println(F("Receive NTP Response"));
 #endif
       udp.read(packetBuffer, NTP_PACKET_SIZE); // read packet into the buffer
@@ -586,7 +581,7 @@ void CheckNtpPacket(uint32_t endWait) {
       secsSince1900 |= (unsigned long)packetBuffer[43];
 
       uint32_t pingTime = (endWait - send_Timestamp) / 2;
-#ifdef _DEBUG_NTP_
+#if _DEBUG_NTP_
       Serial.print("receive time = ");
       Serial.println(pingTime);
 #endif
@@ -603,7 +598,7 @@ void CheckNtpPacket(uint32_t endWait) {
       int32_t delta = -update_interval;
 
       update_interval = endWait - last_update;
-#ifdef _DEBUG_NTP_
+#if _DEBUG_NTP_
       Serial.print("endWait - last_update = ");
       Serial.println(update_interval);
 #endif
@@ -611,19 +606,19 @@ void CheckNtpPacket(uint32_t endWait) {
       delta += update_interval;
 
       if ((endWait > 3600000L) || first_hour) {
-        setSyncInterval(3600); // Update after 1 hour.
+        setSyncInterval(4000); // Update after 1 hour + 10min.
         first_hour = 1;
       } else {
-#ifdef _DEBUG_NTP_
-        setSyncInterval(30); // Update after 30 for the 1st hourt.
+#if _DEBUG_NTP_
+        setSyncInterval(600); // Update after 30 for the 1st hourt.
 #else
-        setSyncInterval(300); // Update after 300 for the 1st hourt.
+        setSyncInterval(600); // Update after 600 for the 1st hourt.
 #endif
       }
 
       time_t tm = secsSince1900 - 2208988800UL + timeZone;
       setTime(tm);
-#ifdef _DEBUG_NTP_
+#if _DEBUG_NTP_
       Serial.print("frac_sec = ");
       Serial.print(frac_sec);
       Serial.print(" delta = ");
@@ -638,7 +633,7 @@ void CheckNtpPacket(uint32_t endWait) {
 // send an NTP request to the time server at the given address
 void sendNTPpacket(IPAddress &address) {
   if (WiFi.status() == WL_CONNECTED) {
-#ifdef _DEBUG_NTP_
+#if _DEBUG_NTP_
     Serial.print(F("sending NTP packet to "));
     Serial.println(address);
 #endif
